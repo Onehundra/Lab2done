@@ -1,4 +1,5 @@
-﻿using System;
+﻿using MongoDB.Driver;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -8,42 +9,35 @@ namespace Lab2done
 {
     public class ProductManager
     {
+        private readonly MongoDbService _db;
         public List<Product> Products { get; private set; }
 
-        public ProductManager()
+        public ProductManager(MongoDbService db)
         {
-            Products = new List<Product>()
-            {
-                new Product(1,"Basic T-Shirt",149.95m),
-                new Product(2,"Basic Jeans",249.95m),
-                new Product(3,"Basic Sweatshirt",199.95m),
-                new Product(4,"Basic Hat",119.95m),
-                new Product(5,"Premium T-Shirt",1450m),
-                new Product(6,"Premium Jeans",2199m),
-                new Product(7,"Premium Sweatshirt",1300m),
-                new Product(8,"Premium Golden Hat",10000m),
-                new Product(9,"Bag",5m)
-            };
+            _db = db;
+            loadProducts();
         }
         public void PrintProductList()
         {
-            foreach (Product p in Products)
+            loadProducts();
+            for (int i = 0; i < Products.Count; i++)
             {
-                Console.WriteLine($"ID:{p.Id} {p.Name} = {p.Price} kr/each");
+                var p = Products[i];
+                Console.WriteLine($"{i + 1}. {p.Name} = {p.Price} kr/each");
             }
         }
 
-        public Product GetProductId(int id)
+        public Product GetProductByIndex(int index)
         {
-            foreach (Product p in Products)
+            if (index <1 || index > Products.Count)
             {
-                if (p.Id == id)
-                {
-                    return p;
-                }
+                return null;
             }
-
-            return null;
+            return Products[index - 1];
+        }
+        public void loadProducts()
+        {
+            Products = _db.Products.Find(p => true).ToList();
         }
     }
 }

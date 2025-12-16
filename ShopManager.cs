@@ -1,4 +1,5 @@
-﻿using System;
+﻿using MongoDB.Driver;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -8,15 +9,19 @@ namespace Lab2done
 {
     public class ShopManager
     {
+        private readonly MongoDbService _db;
         private List<Customer> customers = new List<Customer>();
-        private ProductManager productManager = new ProductManager();
+        private ProductManager productManager;
 
-        public ShopManager()
+        public ShopManager(MongoDbService db)
         {
+            _db = db;
+            productManager = new ProductManager(_db);
             customers.Add(new Customer("Knatte", "123"));
             customers.Add(new Customer("Fnatte", "321"));
             customers.Add(new Customer("Tjatte", "213"));
-            customers.Add(new Customer("kevin", "111"));
+            customers.Add(new Customer("kevin", "111")); //ADMIN ;)
+            _db = db;
         }
 
         public void RunStartMenu()
@@ -41,10 +46,15 @@ namespace Lab2done
                         if (customerLogIn != null)
                         {
                             Console.Clear();
-                            Console.WriteLine($"Logging in...\n\n");
-                            Console.WriteLine(customerLogIn);
-                            Console.ReadKey();
-                            RunCustomerMenu(customerLogIn);
+                           
+                            if (customerLogIn.Name.ToLower() == "kevin")
+                            {
+                                RunAdminMenu();
+                            }
+                            else
+                            {
+                                RunCustomerMenu(customerLogIn);
+                            }
                         }
                         break;
                     case 2:
@@ -142,7 +152,7 @@ namespace Lab2done
                             break;
                         }
 
-                        Product selected = productManager.GetProductId(idChoice);
+                        Product selected = productManager.GetProductByIndex(idChoice);
                         if (selected != null)
                         {
                             Console.WriteLine("How many?");
@@ -182,7 +192,34 @@ namespace Lab2done
 
                         if (input == "yes")
                         {
+                            var order = new Order
+                            {
+                                Items = customer.Cart.Select(item => new OrderItem
+                                {
+                                    ProductId = item.Product.Id,
+                                    Quantity = item.Quantity
+                                }).ToList()
+                            };
+
+                            _db.Orders.InsertOne(order);
+
+                            foreach (var item in order.Items)
+                            {
+                                var product = _db.Products
+                                    .Find(p => p.Id == item.ProductId)
+                                    .FirstOrDefault();
+
+                                if (product != null)
+                                {
+                                    product.Stock -= item.Quantity;
+
+                                    _db.Products.ReplaceOne(p => p.Id == product.Id, product);
+                                }
+                            }
+
+                            Console.WriteLine("Order saved to database!");
                             Console.WriteLine("Thank you for your purchase!");
+
                             customer.Cart.Clear();
                         }
                         else
@@ -233,5 +270,150 @@ namespace Lab2done
             Console.ReadKey();
             Console.Clear();
         }
+        public void RunAdminMenu()
+        {
+            bool running = true;
+
+            while (running)
+            {
+                Console.Clear();
+                Console.WriteLine("=== ADMIN MENU ===");
+                Console.WriteLine("[1] Create product");
+                Console.WriteLine("[2] Read products");
+                Console.WriteLine("[3] Update product");
+                Console.WriteLine("[4] Delete product");
+                Console.WriteLine("[5] Logout");
+                Console.Write("\nMake a choice: ");
+
+                int choice = int.Parse(Console.ReadLine());
+
+                switch (choice)
+                {
+                    case 1:
+                        CreateProduct();
+                        break;
+                    case 2:
+                        ReadProducts();
+                        break;
+                    case 3:
+                        UpdateProduct();
+                        break;
+                    case 4:
+                        DeleteProduct();
+                        break;
+
+                    case 5:
+                        running = false;
+                        break;
+
+                    default:
+                        Console.WriteLine("Invalid input");
+                        Console.ReadKey();
+                        break;
+                }
+            }
+        }
+        public void CreateProduct()
+        {
+            Console.Clear();
+            Console.WriteLine("=== CREATE PRODUCT ===");
+
+            Console.Write("Product name: ");
+            string name = Console.ReadLine();
+
+            Console.Write("Price: ");
+            decimal price = decimal.Parse(Console.ReadLine());
+
+            Console.Write("Stock: ");
+            int stock = int.Parse(Console.ReadLine());
+
+            var product = new Product
+            {
+                Name = name,
+                Price = price,
+                Stock = stock
+            };
+
+            _db.Products.InsertOne(product);
+
+            Console.WriteLine("\nProduct created and saved to MongoDB!");
+            Console.WriteLine("Press any key to return to admin menu...");
+            Console.ReadKey();
+        }
+
+        public void ReadProducts()
+        {
+            Console.Clear();
+            Console.WriteLine("=== ALL PRODUCTS ===\n");
+
+            var products = _db.Products.Find(p => true).ToList();
+            
+            {
+                for (int i = 0; i < products.Count; i++)
+                {
+                    var p = products[i];
+                    Console.WriteLine($"{i + 1}. {p.Name} | {p.Price} kr | Stock: {p.Stock}");
+                }
+            }
+
+            Console.WriteLine("\nPress any key to return to admin menu...");
+            Console.ReadKey();
+        }
+
+        public void UpdateProduct()
+        {
+            Console.Clear();
+            Console.WriteLine("=== UPDATE PRODUCT ===\n");
+
+            var products = _db.Products.Find(p => true).ToList();
+
+            for (int i = 0; i < products.Count; i++)
+            {
+                Console.WriteLine($"{i + 1}. {products[i].Name} | {products[i].Price} kr | {products[i].Stock} in stock");
+            }
+
+            Console.Write("\nSelect product number: ");
+            int choice = int.Parse(Console.ReadLine());
+
+            var selectedProduct = products[choice - 1];
+
+            Console.Write("New price: ");
+            selectedProduct.Price = decimal.Parse(Console.ReadLine());
+
+            Console.Write("New stock count: ");
+            selectedProduct.Stock = int.Parse(Console.ReadLine());
+
+            _db.Products.ReplaceOne(p => p.Id == selectedProduct.Id, selectedProduct);
+
+            Console.WriteLine("\nProduct updated!");
+            Console.WriteLine("Press any key to return to admin menu...");
+            Console.ReadKey();
+        }
+
+        public void DeleteProduct()
+        {
+            Console.Clear();
+            Console.WriteLine("=== DELETE PRODUCT ===\n");
+
+            var products = _db.Products.Find(p => true).ToList();
+
+            for (int i = 0; i < products.Count; i++)
+            {
+                Console.WriteLine($"{i + 1}. {products[i].Name} | {products[i].Price} kr");
+            }
+
+            Console.Write("\nSelect product number to delete: ");
+
+            int choice = int.Parse(Console.ReadLine());
+            var selectedProduct = products[choice - 1];
+
+            _db.Products.DeleteOne(p => p.Id == selectedProduct.Id);
+
+            Console.WriteLine("\nProduct deleted!");
+            Console.WriteLine("Press any key to return to admin menu...");
+            Console.ReadKey();
+        }
+
+
     }
 }
